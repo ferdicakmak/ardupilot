@@ -25,7 +25,22 @@ static int32_t read_barometer(void)
     if (g.log_bitmask & MASK_LOG_IMU) {
         Log_Write_Baro();
     }
-    return barometer.get_altitude() * 100.0f;
+    int32_t balt = barometer.get_altitude() * 100.0f;
+
+    // run glitch protection and update AP_Notify if home has been initialised
+    baro_glitch.check_alt();
+    bool report_baro_glitch = (baro_glitch.glitching() && !ap.usb_connected && hal.util->safety_switch_state() != AP_HAL::Util::SAFETY_DISARMED);
+    if (AP_Notify::flags.baro_glitching != report_baro_glitch) {
+        if (baro_glitch.glitching()) {
+            Log_Write_Error(ERROR_SUBSYSTEM_BARO, ERROR_CODE_BARO_GLITCH);
+        } else {
+            Log_Write_Error(ERROR_SUBSYSTEM_BARO, ERROR_CODE_ERROR_RESOLVED);
+        }
+        AP_Notify::flags.baro_glitching = report_baro_glitch;
+    }
+
+    // return altitude
+    return balt;
 }
 
 // return sonar altitude in centimeters
@@ -118,3 +133,11 @@ void read_receiver_rssi(void)
         receiver_rssi = constrain_int16(ret, 0, 255);
     }
 }
+
+#if EPM_ENABLED == ENABLED
+// epm update - moves epm pwm output back to neutral after grab or release is completed
+void epm_update()
+{
+    epm.update();
+}
+#endif

@@ -58,6 +58,7 @@ print_log_menu(void)
     return(true);
 }
 
+#if CLI_ENABLED == ENABLED
 static int8_t
 dump_log(uint8_t argc, const Menu::arg *argv)
 {
@@ -86,6 +87,7 @@ dump_log(uint8_t argc, const Menu::arg *argv)
     Log_Read((uint16_t)dump_log, dump_log_start, dump_log_end);
     return (0);
 }
+#endif
 
 static int8_t
 erase_logs(uint8_t argc, const Menu::arg *argv)
@@ -154,9 +156,9 @@ process_logs(uint8_t argc, const Menu::arg *argv)
 
 static void do_erase_logs(void)
 {
-	gcs_send_text_P(SEVERITY_LOW, PSTR("Erasing logs\n"));
+	gcs_send_text_P(SEVERITY_HIGH, PSTR("Erasing logs\n"));
     DataFlash.EraseAll();
-	gcs_send_text_P(SEVERITY_LOW, PSTR("Log erase complete\n"));
+	gcs_send_text_P(SEVERITY_HIGH, PSTR("Log erase complete\n"));
 }
 
 #if AUTOTUNE_ENABLED == ENABLED
@@ -171,7 +173,7 @@ struct PACKED log_AutoTune {
     float   new_gain_sp;       // newly calculated gain
 };
 
-// Write an Current data packet
+// Write an Autotune data packet
 static void Log_Write_AutoTune(uint8_t axis, uint8_t tune_step, float rate_min, float rate_max, float new_gain_rp, float new_gain_rd, float new_gain_sp)
 {
     struct log_AutoTune pkt = {
@@ -193,7 +195,7 @@ struct PACKED log_AutoTuneDetails {
     float   rate_cds;       // current rotation rate in centi-degrees / second
 };
 
-// Write an Current data packet
+// Write an Autotune data packet
 static void Log_Write_AutoTuneDetails(int16_t angle_cd, float rate_cds)
 {
     struct log_AutoTuneDetails pkt = {
@@ -467,8 +469,7 @@ struct PACKED log_Attitude {
 // Write an attitude packet
 static void Log_Write_Attitude()
 {
-    Vector3f targets;
-    get_angle_targets_for_reporting(targets);
+    const Vector3f &targets = attitude_control.angle_ef_targets();
     struct log_Attitude pkt = {
         LOG_PACKET_HEADER_INIT(LOG_ATTITUDE_MSG),
         time_ms         : hal.scheduler->millis(),
@@ -704,15 +705,13 @@ static const struct LogStructure log_structure[] PROGMEM = {
       "ERR",   "BB",         "Subsys,ECode" },
 };
 
+#if CLI_ENABLED == ENABLED
 // Read the DataFlash log memory
 static void Log_Read(uint16_t log_num, uint16_t start_page, uint16_t end_page)
 {
- #ifdef AIRFRAME_NAME
-    cliSerial->printf_P(PSTR((AIRFRAME_NAME)));
- #endif
-
     cliSerial->printf_P(PSTR("\n" FIRMWARE_STRING
-                             "\nFree RAM: %u\n"),
+                             "\nFree RAM: %u\n"
+                             "\nFrame: " FRAME_CONFIG_STRING "\n"),
                         (unsigned) hal.util->available_memory());
 
     cliSerial->println_P(PSTR(HAL_BOARD_NAME));
@@ -721,6 +720,7 @@ static void Log_Read(uint16_t log_num, uint16_t start_page, uint16_t end_page)
                              print_flight_mode,
                              cliSerial);
 }
+#endif // CLI_ENABLED
 
 // start a new log
 static void start_logging() 
@@ -742,6 +742,7 @@ static void start_logging()
             if (hal.util->get_system_id(sysid)) {
                 DataFlash.Log_Write_Message(sysid);
             }
+            DataFlash.Log_Write_Message_P(PSTR("Frame: " FRAME_CONFIG_STRING));
 
             // log the flight mode
             Log_Write_Mode(control_mode);

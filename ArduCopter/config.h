@@ -81,34 +81,20 @@
 
 #define MAGNETOMETER ENABLED
 
-#if CONFIG_HAL_BOARD == HAL_BOARD_APM2
- # define CONFIG_SONAR_SOURCE SONAR_SOURCE_ANALOG_PIN
+// disable some features for APM1/APM2
+#if HAL_CPU_CLASS < HAL_CPU_CLASS_75
  # define PARACHUTE DISABLED
  # define AC_RALLY DISABLED
-#elif CONFIG_HAL_BOARD == HAL_BOARD_AVR_SITL
- # define CONFIG_SONAR_SOURCE SONAR_SOURCE_ANALOG_PIN
-#elif CONFIG_HAL_BOARD == HAL_BOARD_PX4
- # define CONFIG_SONAR_SOURCE SONAR_SOURCE_ANALOG_PIN
-#elif CONFIG_HAL_BOARD == HAL_BOARD_FLYMAPLE
- # define CONFIG_ADC        DISABLED
- # define CONFIG_SONAR_SOURCE SONAR_SOURCE_ANALOG_PIN
-#elif CONFIG_HAL_BOARD == HAL_BOARD_LINUX
- # define CONFIG_ADC        DISABLED
- # define CONFIG_SONAR_SOURCE SONAR_SOURCE_ANALOG_PIN
-#elif CONFIG_HAL_BOARD == HAL_BOARD_VRBRAIN
- # define CONFIG_SONAR_SOURCE SONAR_SOURCE_ANALOG_PIN
+ # define EPM_ENABLED DISABLED
+ # define CLI_ENABLED           DISABLED
+ # define FRSKY_TELEM_ENABLED   DISABLED
 #endif
 
-#if HAL_CPU_CLASS < HAL_CPU_CLASS_75 || CONFIG_HAL_BOARD == HAL_BOARD_AVR_SITL
+#if HAL_CPU_CLASS < HAL_CPU_CLASS_75 || CONFIG_HAL_BOARD == HAL_BOARD_AVR_SITL || CONFIG_HAL_BOARD == HAL_BOARD_LINUX
  // low power CPUs (APM1, APM2 and SITL)
  # define MAIN_LOOP_RATE    100
  # define MAIN_LOOP_SECONDS 0.01
  # define MAIN_LOOP_MICROS  10000
-#elif CONFIG_HAL_BOARD == HAL_BOARD_LINUX
- // Linux boards
- # define MAIN_LOOP_RATE    200
- # define MAIN_LOOP_SECONDS 0.005
- # define MAIN_LOOP_MICROS  5000
 #else
  // high power CPUs (Flymaple, PX4, Pixhawk, VRBrain)
  # define MAIN_LOOP_RATE    400
@@ -121,6 +107,28 @@
 //
 #ifndef FRAME_CONFIG
  # define FRAME_CONFIG   QUAD_FRAME
+#endif
+
+#if FRAME_CONFIG == QUAD_FRAME
+ # define FRAME_CONFIG_STRING "QUAD"
+#elif FRAME_CONFIG == TRI_FRAME
+ # define FRAME_CONFIG_STRING "TRI"
+#elif FRAME_CONFIG == HEXA_FRAME
+ # define FRAME_CONFIG_STRING "HEXA"
+#elif FRAME_CONFIG == Y6_FRAME
+ # define FRAME_CONFIG_STRING "Y6"
+#elif FRAME_CONFIG == OCTA_FRAME
+ # define FRAME_CONFIG_STRING "OCTA"
+#elif FRAME_CONFIG == OCTA_QUAD_FRAME
+ # define FRAME_CONFIG_STRING "OCTA_QUAD"
+#elif FRAME_CONFIG == HELI_FRAME
+ # define FRAME_CONFIG_STRING "HELI"
+#elif FRAME_CONFIG == SINGLE_FRAME
+ # define FRAME_CONFIG_STRING "SINGLE"
+#elif FRAME_CONFIG == COAX_FRAME
+ # define FRAME_CONFIG_STRING "COAX"
+#else
+ # define FRAME_CONFIG_STRING "UNKNOWN"
 #endif
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -192,30 +200,6 @@
 // Sonar
 //
 
-#ifndef CONFIG_SONAR_SOURCE
- # define CONFIG_SONAR_SOURCE SONAR_SOURCE_ADC
-#endif
-
-#if CONFIG_SONAR_SOURCE == SONAR_SOURCE_ADC && CONFIG_ADC == DISABLED
- # warning Cannot use ADC for CONFIG_SONAR_SOURCE, becaude CONFIG_ADC is DISABLED
- # warning Defaulting CONFIG_SONAR_SOURCE to ANALOG_PIN
- # undef CONFIG_SONAR_SOURCE
- # define CONFIG_SONAR_SOURCE SONAR_SOURCE_ANALOG_PIN
-#endif
-
-#if CONFIG_SONAR_SOURCE == SONAR_SOURCE_ADC
- # ifndef CONFIG_SONAR_SOURCE_ADC_CHANNEL
-  #  define CONFIG_SONAR_SOURCE_ADC_CHANNEL 7
- # endif
-#elif CONFIG_SONAR_SOURCE == SONAR_SOURCE_ANALOG_PIN
- # ifndef CONFIG_SONAR_SOURCE_ANALOG_PIN
-  #  define CONFIG_SONAR_SOURCE_ANALOG_PIN 0
- # endif
-#else
- # warning Invalid value for CONFIG_SONAR_SOURCE, disabling sonar
- # define CONFIG_SONAR DISABLED
-#endif
-
 #ifndef CONFIG_SONAR
  # define CONFIG_SONAR ENABLED
 #endif
@@ -234,6 +218,10 @@
 
 #ifndef THR_SURFACE_TRACKING_VELZ_MAX
  # define THR_SURFACE_TRACKING_VELZ_MAX 150 // max vertical speed change while surface tracking with sonar
+#endif
+
+#ifndef SONAR_TIMEOUT_MS
+ # define SONAR_TIMEOUT_MS  1000            // desired sonar alt will reset to current sonar alt after this many milliseconds without a good sonar alt
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -332,15 +320,30 @@
 #define FS_GCS_ENABLED_ALWAYS_RTL           1
 #define FS_GCS_ENABLED_CONTINUE_MISSION     2
 
+// pre-arm baro vs inertial nav max alt disparity
+#ifndef PREARM_MAX_ALT_DISPARITY_CM
+ # define PREARM_MAX_ALT_DISPARITY_CM       200     // barometer and inertial nav altitude must be within this many centimeters
+#endif
+
 // pre-arm check max velocity
 #ifndef PREARM_MAX_VELOCITY_CMS
  # define PREARM_MAX_VELOCITY_CMS           50.0f   // vehicle must be travelling under 50cm/s before arming
 #endif
 
+// arming check's maximum acceptable accelerometer vector difference (in m/s/s) between primary and backup accelerometers
+#ifndef PREARM_MAX_ACCEL_VECTOR_DIFF
+  #define PREARM_MAX_ACCEL_VECTOR_DIFF  1.0f    // pre arm accel check will fail if primary and backup accelerometer vectors differ by 1m/s/s
+#endif
+
+// arming check's maximum acceptable rotation rate difference (in rad/sec) between primary and backup gyros
+#ifndef PREARM_MAX_GYRO_VECTOR_DIFF
+  #define PREARM_MAX_GYRO_VECTOR_DIFF   0.35f   // pre arm gyro check will fail if primary and backup gyro vectors differ by 0.35 rad/sec (=20deg/sec)
+#endif
+
 //////////////////////////////////////////////////////////////////////////////
 //  EKF Checker
-#ifndef EKFCHECK_COMPASS_THRESHOLD_DEFAULT
- # define EKFCHECK_COMPASS_THRESHOLD_DEFAULT    0.6f    // EKF checker's default compass variance above which the EKF's horizontal position will be considered bad
+#ifndef EKFCHECK_THRESHOLD_DEFAULT
+ # define EKFCHECK_THRESHOLD_DEFAULT    0.8f    // EKF checker's default compass and velocity variance above which the EKF's horizontal position will be considered bad
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -370,6 +373,11 @@
   # define COMPASS_OFFSETS_MAX          500
  #endif
 #endif
+
+// arming check's maximum acceptable vector difference between internal and external compass after vectors are normalized to field length of 1.0
+#ifndef COMPASS_ACCEPTABLE_VECTOR_DIFF
+  #define COMPASS_ACCEPTABLE_VECTOR_DIFF    0.75    // pre arm compass check will fail if internal vs external compass direction differ by more than 45 degrees
+ #endif
 
 //////////////////////////////////////////////////////////////////////////////
 //  OPTICAL_FLOW
@@ -414,7 +422,7 @@
 //////////////////////////////////////////////////////////////////////////////
 //	EPM cargo gripper
 #ifndef EPM_ENABLED
- # define EPM_ENABLED DISABLED
+ # define EPM_ENABLED ENABLED
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -439,22 +447,22 @@
 // FLIGHT_MODE
 //
 
-#if !defined(FLIGHT_MODE_1)
+#ifndef FLIGHT_MODE_1
  # define FLIGHT_MODE_1                  STABILIZE
 #endif
-#if !defined(FLIGHT_MODE_2)
+#ifndef FLIGHT_MODE_2
  # define FLIGHT_MODE_2                  STABILIZE
 #endif
-#if !defined(FLIGHT_MODE_3)
+#ifndef FLIGHT_MODE_3
  # define FLIGHT_MODE_3                  STABILIZE
 #endif
-#if !defined(FLIGHT_MODE_4)
+#ifndef FLIGHT_MODE_4
  # define FLIGHT_MODE_4                  STABILIZE
 #endif
-#if !defined(FLIGHT_MODE_5)
+#ifndef FLIGHT_MODE_5
  # define FLIGHT_MODE_5                  STABILIZE
 #endif
-#if !defined(FLIGHT_MODE_6)
+#ifndef FLIGHT_MODE_6
  # define FLIGHT_MODE_6                  STABILIZE
 #endif
 
@@ -475,11 +483,20 @@
 #ifndef LAND_DETECTOR_TRIGGER
  # define LAND_DETECTOR_TRIGGER 50    // number of 50hz iterations with near zero climb rate and low throttle that triggers landing complete.
 #endif
+#ifndef LAND_DETECTOR_MAYBE_TRIGGER
+ # define LAND_DETECTOR_MAYBE_TRIGGER   10  // number of 50hz iterations with near zero climb rate and low throttle that means we might be landed (used to reset horizontal position targets to prevent tipping over)
+#endif
+#ifndef LAND_DETECTOR_CLIMBRATE_MAX
+# define LAND_DETECTOR_CLIMBRATE_MAX    30  // vehicle climb rate must be between -30 and +30 cm/s
+#endif
+#ifndef LAND_DETECTOR_ROTATION_MAX
+ # define LAND_DETECTOR_ROTATION_MAX    0.50f   // vehicle rotation must be below 0.5 rad/sec (=30deg/sec for) vehicle to consider itself landed
+#endif
 #ifndef LAND_REQUIRE_MIN_THROTTLE_TO_DISARM // require pilot to reduce throttle to minimum before vehicle will disarm
  # define LAND_REQUIRE_MIN_THROTTLE_TO_DISARM ENABLED
 #endif
 #ifndef LAND_REPOSITION_DEFAULT
- # define LAND_REPOSITION_DEFAULT   0   // by default the pilot cannot override roll/pitch during landing
+ # define LAND_REPOSITION_DEFAULT   1   // by default the pilot can override roll/pitch during landing
 #endif
 #ifndef LAND_WITH_DELAY_MS
  # define LAND_WITH_DELAY_MS        4000    // default delay (in milliseconds) when a land-with-delay is triggered during a failsafe event
@@ -527,6 +544,10 @@
 
 #ifndef ACRO_BALANCE_PITCH
  #define ACRO_BALANCE_PITCH         1.0f
+#endif
+
+#ifndef ACRO_EXPO_DEFAULT
+ #define ACRO_EXPO_DEFAULT          0.3f
 #endif
 
 // Stabilize (angle controller) gains
@@ -600,7 +621,7 @@
  # define RATE_ROLL_D        		0.004f
 #endif
 #ifndef RATE_ROLL_IMAX
- # define RATE_ROLL_IMAX         	500
+ # define RATE_ROLL_IMAX         	1000
 #endif
 
 #ifndef RATE_PITCH_P
@@ -626,7 +647,7 @@
  # define RATE_YAW_D              	0.000f
 #endif
 #ifndef RATE_YAW_IMAX
- # define RATE_YAW_IMAX            	800
+ # define RATE_YAW_IMAX            	1000
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -683,8 +704,8 @@
  # define THR_MAX_DEFAULT       1000            // maximum throttle sent to the motors
 #endif
 
-#ifndef THROTTLE_IN_DEADBAND
-# define THROTTLE_IN_DEADBAND    100            // the throttle input channel's deadband in PWM
+#ifndef THR_DZ_DEFAULT
+# define THR_DZ_DEFAULT         100             // the deadzone above and below mid throttle while in althold or loiter
 #endif
 
 #ifndef ALT_HOLD_P
@@ -693,7 +714,21 @@
 
 // RATE control
 #ifndef THROTTLE_RATE_P
- # define THROTTLE_RATE_P       6.0f
+ # define THROTTLE_RATE_P       5.0f
+#endif
+
+// Throttle Accel control
+#ifndef THROTTLE_ACCEL_P
+ # define THROTTLE_ACCEL_P      0.50f
+#endif
+#ifndef THROTTLE_ACCEL_I
+ # define THROTTLE_ACCEL_I      1.00f
+#endif
+#ifndef THROTTLE_ACCEL_D
+ # define THROTTLE_ACCEL_D      0.0f
+#endif
+#ifndef THROTTLE_ACCEL_IMAX
+ # define THROTTLE_ACCEL_IMAX   800
 #endif
 
 // default maximum vertical velocity and acceleration the pilot may request
@@ -711,20 +746,6 @@
 // the acceleration used to define the distance-velocity curve
 #ifndef ALT_HOLD_ACCEL_MAX
  # define ALT_HOLD_ACCEL_MAX 250    // if you change this you must also update the duplicate declaration in AC_WPNav.h
-#endif
-
-// Throttle Accel control
-#ifndef THROTTLE_ACCEL_P
- # define THROTTLE_ACCEL_P  0.75f
-#endif
-#ifndef THROTTLE_ACCEL_I
- # define THROTTLE_ACCEL_I  1.50f
-#endif
-#ifndef THROTTLE_ACCEL_D
- # define THROTTLE_ACCEL_D 0.0f
-#endif
-#ifndef THROTTLE_ACCEL_IMAX
- # define THROTTLE_ACCEL_IMAX 500
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -782,6 +803,11 @@
 // use this to completely disable the CLI
 #ifndef CLI_ENABLED
   #  define CLI_ENABLED           ENABLED
+#endif
+
+//use this to completely disable FRSKY TELEM
+#ifndef FRSKY_TELEM_ENABLED
+  #  define FRSKY_TELEM_ENABLED          ENABLED
 #endif
 
 /*

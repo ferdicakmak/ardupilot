@@ -63,6 +63,16 @@ AP_RangeFinder_PX4::AP_RangeFinder_PX4(RangeFinder &_ranger, uint8_t instance, R
 }
 
 /* 
+   close the file descriptor
+*/
+AP_RangeFinder_PX4::~AP_RangeFinder_PX4()
+{
+    if (_fd != -1) {
+        close(_fd);
+    }
+}
+
+/* 
    open the PX4 driver, returning the file descriptor
 */
 int AP_RangeFinder_PX4::open_driver(void)
@@ -112,7 +122,7 @@ void AP_RangeFinder_PX4::update(void)
     }
 
     // consider the range finder healthy if we got a reading in the last 0.2s
-    state.healthy = (hrt_absolute_time() - _last_timestamp < 200000);
+    state.healthy = (hal.scheduler->micros64() - _last_timestamp < 200000);
 
     if (count != 0) {
         state.distance_cm = sum / count * 100.0f;

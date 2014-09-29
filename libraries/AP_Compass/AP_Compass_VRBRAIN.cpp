@@ -44,23 +44,21 @@ extern const AP_HAL::HAL& hal;
 bool AP_Compass_VRBRAIN::init(void)
 {
 	_mag_fd[0] = open(MAG_DEVICE_PATH, O_RDONLY);
-	if (_mag_fd[0] < 0) {
+    _mag_fd[1] = open(MAG_DEVICE_PATH "1", O_RDONLY);
+    _num_instances = 0;
+    for (uint8_t i=0; i<COMPASS_MAX_INSTANCES; i++) {
+        if (_mag_fd[i] >= 0) {
+            _num_instances = i+1;
+        }
+    }
+    if (_num_instances == 0) {
         hal.console->printf("Unable to open " MAG_DEVICE_PATH "\n");
         return false;
 	}
 
-	_mag_fd[1] = open(MAG_DEVICE_PATH "1", O_RDONLY);
-	if (_mag_fd[1] >= 0) {
-        _num_instances = 2;
-	} else {
-        _num_instances = 1;
-    }
-
     for (uint8_t i=0; i<_num_instances; i++) {
-#ifdef DEVIOCGDEVICEID
         // get device id
         _dev_id[i] = ioctl(_mag_fd[i], DEVIOCGDEVICEID, 0);
-#endif
 
         // average over up to 20 samples
         if (ioctl(_mag_fd[i], SENSORIOCSQUEUEDEPTH, 20) != 0) {
@@ -70,6 +68,11 @@ bool AP_Compass_VRBRAIN::init(void)
 
         // remember if the compass is external
         _is_external[i] = (ioctl(_mag_fd[i], MAGIOCGEXTERNAL, 0) > 0);
+#if defined(CONFIG_ARCH_BOARD_VRBRAIN_V45)
+		//deal with situations where user has cut internal mag on VRBRAIN 4.5 
+		//and uses only one external mag attached to the internal I2C bus
+		_is_external[i] = _external.load() ? _external.get() : _is_external[i];
+#endif
         if (_is_external[i]) {
             hal.console->printf("Using external compass[%u]\n", (unsigned)i);
         }
@@ -94,7 +97,7 @@ bool AP_Compass_VRBRAIN::read(void)
 
     // consider the compass healthy if we got a reading in the last 0.2s
     for (uint8_t i=0; i<_num_instances; i++) {
-        _healthy[i] = (hrt_absolute_time() - _last_timestamp[i] < 200000);
+        _healthy[i] = (hal.scheduler->micros64() - _last_timestamp[i] < 200000);
     }
 
     for (uint8_t i=0; i<_num_instances; i++) {
@@ -109,7 +112,7 @@ bool AP_Compass_VRBRAIN::read(void)
         _sum[i].rotate(MAG_BOARD_ORIENTATION);
 
         // override any user setting of COMPASS_EXTERNAL 
-        _external.set(_is_external[0]);
+        //_external.set(_is_external[0]);
 
         if (_is_external[i]) {
             // add user selectable orientation
